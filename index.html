@@ -730,12 +730,19 @@ $('historyList').addEventListener('click', e => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   } else if (delIdx !== undefined) {
-    if (confirm('이 주문 기록을 삭제하시겠습니까?')) {
-      r.history.splice(+delIdx, 1);
-      save();
-      renderHistory();
-    }
+  if (confirm('이 주문 기록을 삭제하시겠습니까?')) {
+    r.history.splice(+delIdx, 1);
+    
+    // 로컬 및 Supabase 동기화 즉시 실행
+    saveLocal();
+    $('syncStatus').textContent = '주문 기록 삭제 중...';
+    
+    // 비동기로 Supabase Storage에 갱신된 파일 업로드
+    saveSupabaseStorage(); 
+    
+    renderHistory();
   }
+}
 });
 
 $('result').addEventListener('click', async e => {
