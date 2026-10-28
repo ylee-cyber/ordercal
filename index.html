@@ -326,10 +326,17 @@ function saveSupabaseStorage() {
 function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 
 // 변경 발생 시 로컬 저장 후 Supabase 자동 저장 예약 (0.8초 딜레이)
+// 기존 코드
+// function save() {
+//   saveLocal();
+//   if (saveTimeout) clearTimeout(saveTimeout);
+//   saveTimeout = setTimeout(saveSupabaseStorage, 800);
+// }
+
+// 변경할 코드 (즉시 동기화)
 function save() {
   saveLocal();
-  if (saveTimeout) clearTimeout(saveTimeout);
-  saveTimeout = setTimeout(saveSupabaseStorage, 800);
+  saveSupabaseStorage();
 }
 
 const menu = () => state.restaurants[state.current].menu;
@@ -751,9 +758,14 @@ $('result').addEventListener('click', async e => {
       peopleCount: last.people.length,
       grand: last.grand
     });
-    save();
+
+    // 로컬 및 Supabase 동기화 실행
+    saveLocal();
+    $('syncStatus').textContent = '주문 기록 클라우드 동기화 중...';
+    await saveSupabaseStorage(); // 저장이 끝날 때까지 대기
+    
     renderHistory();
-    alert(`'${state.current}' [${todayStr} - ${finalRound}] 주문 기록이 저장되었습니다.`);
+    alert(`'${state.current}' [${todayStr} - ${finalRound}] 주문 기록이 Supabase에 안전하게 저장되었습니다.`);
     return;
   }
 });
