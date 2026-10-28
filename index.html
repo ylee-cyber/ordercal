@@ -43,8 +43,8 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .overc{border-color:var(--bad);box-shadow:0 0 0 1px var(--bad) inset}
 .badge{background:var(--bad);color:#fff;border-radius:6px;padding:0 6px;font-size:12px;margin-left:6px}
 .bad{color:var(--bad)}
-.chip{display:inline-flex;gap:2px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:2px 4px 2px 10px;font-size:13px}
-.chip button{border:0;background:none;padding:0 6px;cursor:pointer;color:var(--sub)}
+.chip{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:4px 8px 4px 12px;font-size:13px;background:var(--bg);margin:3px}
+.chip button{border:0;background:none;padding:0 4px;cursor:pointer;color:var(--sub)}
 </style>
 </head>
 <body>
@@ -93,8 +93,9 @@ td.n,th.n{text-align:right;white-space:nowrap}
 <div class="card">
   <details>
     <summary id="noteSum">요청사항</summary>
-    <div class="sub" style="margin:6px 0 8px">금액이 없는 요청(덜맵게, 샐러드 빼고 등)입니다. 등록해 두면 메뉴로 오인되지 않고 '요청'으로 표시됩니다. 등록 없이 쓰려면 <b>#덜맵게</b>, <b>#샐러드_빼고</b>처럼 앞에 #을 붙이세요. 요청은 바로 앞에 쓴 메뉴에 붙습니다.</div>
-    <div id="noteList" class="row"></div>
+    <div class="sub" style="margin:6px 0 8px">금액이 없는 요청(덜맵게, 샐러드 빼고 등)입니다. 등록해 두면 메뉴로 오인되지 않고 '요청'으로 표시됩니다. 별칭을 설정해두면 다양한 표현(예: 안맵게, 매운맛_빼고 등)을 같은 요청으로 자동 변환해 줍니다.</div>
+    <div id="noteList" style="margin-bottom:8px"></div>
+    <table style="margin-top:8px"><tbody id="noteBody"></tbody></table>
     <div class="row" style="margin-top:8px"><input id="newNote" placeholder="예: 덜맵게, 샐러드 빼고" style="flex:1;min-width:160px"><button id="addNote">요청사항 등록</button></div>
   </details>
 </div>
@@ -118,11 +119,11 @@ td.n,th.n{text-align:right;white-space:nowrap}
 </div>
 
 <script>
-// ===== Supabase 설정 정보 (본인의 값으로 변경하세요) =====
+// ===== Supabase 설정 정보 =====
 const SUPABASE_URL = 'https://biqnpnwhsenskwnkpfif.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJpcW5wbndoc2Vuc2t3bmtwZmlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxNzE2NTcsImV4cCI6MjEwODc0NzY1N30.PHaGtBnpQVJzoFhW6eMDF9TriOz68QlXxFJUVH2BbBE';
-const BUCKET_NAME = 'json'; // Supabase Storage 버킷 이름
-const FILE_PATH = 'order_calculator_data.json'; // 저장될 JSON 파일명
+const BUCKET_NAME = 'json';
+const FILE_PATH = 'order_calculator_data.json';
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -131,6 +132,7 @@ const $ = id => document.getElementById(id);
 let state = { restaurants: { '식당 1': { menu: {}, history: [] } }, notes: {}, limit: 9000, current: '식당 1' };
 let last = null, unkList = [];
 const opened = new Set();
+const noteOpened = new Set();
 
 // <parser>
 const UNIT = '(?:개|인분|그릇|잔|판|ea)';
@@ -154,6 +156,13 @@ const parseTiers = s => {
 };
 const tiersStr = t => Object.keys(t).sort((a, b) => a - b).map(q => q + ':' + t[q]).join(', ');
 
+function normNote(obj) {
+  if (typeof obj === 'string') return { alias: [] };
+  if (!obj || typeof obj !== 'object') return { alias: [] };
+  obj.alias = Array.isArray(obj.alias) ? obj.alias : [];
+  return obj;
+}
+
 function parseOrders(text, menuMap, nameFirst, notesMap) {
   const lookOf = map => {
     const l = Object.create(null);
@@ -162,8 +171,20 @@ function parseOrders(text, menuMap, nameFirst, notesMap) {
     return l;
   };
   const look = lookOf(menuMap);
+  
+  // 요청사항 매핑 및 별칭 처리 사전 맵 생성
+  const noteLook = Object.create(null);
+  if (notesMap) {
+    Object.keys(notesMap).forEach(k => {
+      noteLook[k] = k;
+      const nObj = normNote(notesMap[k]);
+      nObj.alias.forEach(a => { if (!(a in noteLook)) noteLook[a] = k; });
+    });
+  }
+  
   const names = Object.keys(look).sort((a, b) => b.length - a.length);
-  const noteNames = Object.keys(notesMap || {}).sort((a, b) => b.length - a.length);
+  const noteNames = Object.keys(noteLook).sort((a, b) => b.length - a.length);
+
   const find = (s, list) => list.find(n => s.startsWith(n) && (s.length === n.length || /[\s\dxX×*]/.test(s[n.length])));
   const key = i => i.name + '|' + Object.keys(i.opts).sort().map(o => o + i.opts[o]).join(',') + '|' + i.notes.join(',');
   const push = (items, name, qty, opts, ctx) => items.push({ name, qty, opts: opts || {}, ctx, notes: [] });
@@ -172,9 +193,10 @@ function parseOrders(text, menuMap, nameFirst, notesMap) {
     list.forEach(i => { const f = out.find(o => key(o) === key(i)); if (f) f.qty += i.qty; else out.push(i); });
     return out;
   };
-  const addNote = (items, pnotes, txt) => {
+  const addNote = (items, pnotes, rawTxt) => {
+    const canonicalTxt = noteLook[rawTxt] || rawTxt;
     const t = items[items.length - 1], arr = t ? t.notes : pnotes;
-    if (!arr.includes(txt)) arr.push(txt);
+    if (!arr.includes(canonicalTxt)) arr.push(canonicalTxt);
   };
   const people = [], byName = {};
   let anon = 0;
@@ -253,7 +275,10 @@ function parseOrders(text, menuMap, nameFirst, notesMap) {
     if (byName[name]) {
       const b = byName[name];
       b.items = mergeItems(b.items.concat(list));
-      pnotes.forEach(n => { if (!b.notes.includes(n)) b.notes.push(n); });
+      pnotes.forEach(n => {
+        const cn = noteLook[n] || n;
+        if (!b.notes.includes(cn)) b.notes.push(cn);
+      });
     } else { const p = { name, items: list, notes: pnotes }; byName[name] = p; people.push(p); }
   });
   return people;
@@ -292,11 +317,17 @@ async function load() {
     } catch (err) {}
   }
   Object.values(state.restaurants).forEach(r => { r.menu = r.menu || {}; r.history = Array.isArray(r.history) ? r.history : []; for (const k in r.menu) r.menu[k] = norm(r.menu[k]); });
-  state.notes = isObj(state.notes) ? state.notes : {};
+  
+  // 요청사항 정규화 (문자열인 경우 객체로 변환)
+  const rawNotes = isObj(state.notes) ? state.notes : {};
+  state.notes = {};
+  for (const k in rawNotes) {
+    state.notes[k] = normNote(rawNotes[k]);
+  }
+
   if (typeof state.limit !== 'number' || !(state.limit >= 0)) state.limit = 9000;
 }
 
-// Supabase Storage에 자동 저장 (Debounce 적용으로 빈번한 요청 방지)
 let saveTimeout = null;
 function saveSupabaseStorage() {
   $('syncStatus').textContent = '저장 중...';
@@ -325,7 +356,6 @@ function saveSupabaseStorage() {
 
 function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 
-// 변경 발생 시 로컬 저장 후 Supabase 자동 저장 예약 (0.8초 딜레이)
 function save() {
   saveLocal();
   if (saveTimeout) clearTimeout(saveTimeout);
@@ -344,7 +374,7 @@ function setMenu(name, price) {
   return true;
 }
 
-const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅗ<b><b><b><b>ㅘ</b><b>ㅙ</b><b>ㅚ</b>ㅛㅜ</b><b><b>ㅝ</b><b>ㅞ</b><b>ㅟ</b>ㅠㅡ</b>ㅢㅣ', JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅗ<b><b><b><b><b>ㅘ</b><b>ㅙ</b><b>ㅚ</b>ㅛㅜ</b><b><b><b>ㅝ</b><b>ㅞ</b><b>ㅟ</b>ㅠㅡ</b>ㅢㅣ', JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
 function jamo(s) {
   return [...s.replace(/\s/g, '').toLowerCase()].map(ch => {
     const c = ch.charCodeAt(0) - 0xAC00;
@@ -372,6 +402,17 @@ function cleanAlias(v, mn, on) {
     if (taken) bad.push(a); else if (!out.includes(a)) out.push(a);
   });
   if (bad.length) alert('이미 다른 이름으로 쓰이고 있어 제외했습니다: ' + bad.join(', '));
+  return out;
+}
+
+function cleanNoteAlias(v, targetNote) {
+  const out = [], bad = [];
+  v.split(/[,，\n]+/).map(x => x.trim().replace(/\s+/g, ' ')).filter(Boolean).forEach(a => {
+    if (a === targetNote) return;
+    let taken = Object.keys(state.notes).some(k => k === a || (k !== targetNote && state.notes[k].alias.includes(a)));
+    if (taken) bad.push(a); else if (!out.includes(a)) out.push(a);
+  });
+  if (bad.length) alert('이미 다른 요청사항으로 쓰이고 있어 제외했습니다: ' + bad.join(', '));
   return out;
 }
 
@@ -427,7 +468,13 @@ function calc() {
         const per = on.reduce((a, o) => a + priceFor(e.opts[o], i.opts[o]), 0);
         i.base = priceFor(e, i.qty); i.optAmt = i.qty * per; i.amt = i.base + i.optAmt; p.sum += i.amt;
       }
-      const t = totals[i.label] || (totals[i.label] = { qty: 0, amt: 0, miss: false });
+      
+      let summaryKey = i.label;
+      if (i.notes && i.notes.length > 0) {
+        summaryKey += ' [요청: ' + i.notes.join(', ') + ']';
+      }
+      
+      const t = totals[summaryKey] || (totals[summaryKey] = { qty: 0, amt: 0, miss: false });
       t.qty += i.qty;
       if (i.amt === null) t.miss = true; else t.amt += i.amt;
     });
@@ -452,7 +499,7 @@ function renderUnknown() {
   const el = $('unk');
   el.hidden = !unkList.length;
   if (!unkList.length) return;
-  el.innerHTML = `<h2>⚠ 등록되지 않은 항목 ${unkList.length}개</h2><div class="sub" style="margin-bottom:8px">띄어쓰기가 있는 이름(삶은 계란)은 한 항목으로 묶어 보여줍니다. 서로 다른 메뉴가 붙어 있으면 '나누기'를 누르거나 쉼표로 구분해 쓰세요. 별칭·요청사항(덜맵게 등)은 가격 없이 등록됩니다. 여러 단어 요청은 아래 '요청사항' 칸에 문구째 등록하거나 #샐러드_빼고 처럼 쓰세요.</div>` + unkList.map((u, i) => {
+  el.innerHTML = `<h2>⚠ 등록되지 않은 항목 ${unkList.length}개</h2><div class="sub" style="margin-bottom:8px">띄어쓰기가 있는 이름은 한 항목으로 묶어 보여줍니다. 요청사항은 '요청사항(금액 없음)'으로 선택하거나 아래 요청사항 칸에 등록하세요.</div>` + unkList.map((u, i) => {
     const cs = candidates(u), best = cs[0] && cs[0].s >= 0.7 ? cs[0] : null;
     const isReq = !best && REQ_RE.test(u.name);
     const opts = [{ v: 'menu', label: '새 메뉴' }, { v: 'note', label: '요청사항 (금액 없음)' }];
@@ -462,14 +509,16 @@ function renderUnknown() {
     return `<div class="row" style="margin-bottom:8px"><b style="min-width:90px">${esc(u.name)}</b>
      <input class="price" type="number" min="0" step="100" placeholder="가격" data-u="${i}" value="${esc(u.price || '')}"> 원
      <select data-k="${i}" style="flex:none;min-width:0;max-width:100%">${opts.map(o => `<option value="${esc(o.v)}"${o.v === sel ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
-     <button data-r="${i}">등록</button>${u.name.includes(' ') ? `<button data-sp="${i}" title="띄어쓰기 기준으로 각각 다른 항목으로 나눕니다">나누기</button>` : ''}
-     ${!u.kind && isReq ? '<div class="sub" style="width:100%">💡 요청사항처럼 보여서 \'요청사항(금액 없음)\'으로 선택해 두었어요. 메뉴라면 \'새 메뉴\'로 바꾸고 가격을 입력하세요</div>' : ''}${!u.kind && best ? `<div class="sub" style="width:100%">💡 '${esc(best.name)}'과(와) 비슷해요. 같은 메뉴라면 그대로 등록하세요 (별칭으로 저장됩니다)</div>` : ''}</div>`;
+     <button data-r="${i}">등록</button>${u.name.includes(' ') ? `<button data-sp="${i}" title="띄어쓰기 기준으로 각각 다른 항목으로 나눕니다">나누기</button>` : ''}</div>`;
   }).join('') + '<button id="regAll" class="pri">입력한 항목 모두 등록</button>';
 }
 function register(i) {
   const u = unkList[i], box = $('unk');
   const inp = box.querySelector(`[data-u="${i}"]`), kind = box.querySelector(`[data-k="${i}"]`).value;
-  if (kind === 'note') { state.notes[u.name] = 1; return true; }
+  if (kind === 'note') { 
+    if (!state.notes[u.name]) state.notes[u.name] = { alias: [] }; 
+    return true; 
+  }
   if (kind.startsWith('am:') || kind.startsWith('ao:')) {
     const t = kind.startsWith('am:') ? menu()[kind.slice(3)] : (menu()[u.ctx] || { opts: {} }).opts[kind.slice(3)];
     if (!t) return false;
@@ -535,22 +584,60 @@ function resultText() {
   lines.push('', `총 ${people.length}명 ${won(grand)}${state.limit > 0 ? ' / 총 한도 ' + won(state.limit * people.length) : ''}`);
   return lines.join('\n');
 }
+
 function renderNotes() {
   const ns = Object.keys(state.notes);
   $('noteSum').textContent = `요청사항 (${ns.length}개 등록됨 · 금액 없음)`;
-  $('noteList').innerHTML = ns.map(n => `<span class="chip">${esc(n)}<button data-nd="${esc(n)}" title="삭제">✕</button></span>`).join('') || '<span class="sub">등록된 요청사항이 없습니다.</span>';
+  
+  $('noteList').innerHTML = ns.map(n => {
+    const obj = normNote(state.notes[n]);
+    return `<span class="chip">${esc(n)}${obj.alias.length ? ' <span class="sub">(' + obj.alias.length + ')</span>' : ''}<button data-nd="${esc(n)}" title="삭제">✕</button></span>`;
+  }).join('') || '<span class="sub">등록된 요청사항이 없습니다.</span>';
+
+  $('noteBody').innerHTML = ns.map(n => {
+    const obj = normNote(state.notes[n]), on = noteOpened.has(n), q = esc(n);
+    let h = `<tr><td><b>${q}</b><div class="sub">${obj.alias.length ? '별칭: ' + esc(obj.alias.join(', ')) : '별칭 없음'}</div></td>
+      <td class="n"><button data-notet="${q}">${on ? '접기' : '상세'}</button> <button class="del" data-noted="${q}">삭제</button></td></tr>`;
+    if (on) {
+      h += `<tr><td colspan="2"><div class="detail">
+        <div class="sub">별칭 (쉼표로 구분) · 예: 안맵게, 맵기조절_약하게 등 동일하게 처리할 표현</div>
+        <input data-note="${q}" data-f="alias" value="${esc(obj.alias.join(', '))}" placeholder="별칭1, 별칭2" style="width:100%;margin:4px 0">
+      </div></td></tr>`;
+    }
+    return h;
+  }).join('');
 }
+
 $('addNote').onclick = () => {
   const t = $('newNote').value.trim().replace(/\s+/g, ' ');
   if (!t) return;
-  state.notes[t] = 1; $('newNote').value = ''; save(); renderNotes(); if (last) calc();
+  if (!state.notes[t]) state.notes[t] = { alias: [] };
+  $('newNote').value = ''; save(); renderNotes(); if (last) calc();
 };
 $('newNote').addEventListener('keydown', e => { if (e.key === 'Enter') $('addNote').click(); });
+
 $('noteList').addEventListener('click', e => {
   const n = e.target.dataset.nd;
   if (n === undefined) return;
   delete state.notes[n]; save(); renderNotes(); if (last) calc();
 });
+
+$('noteBody').addEventListener('change', e => {
+  const d = e.target.dataset, nObj = state.notes[d.note];
+  if (!nObj || d.f !== 'alias') return;
+  nObj.alias = cleanNoteAlias(e.target.value, d.note);
+  e.target.value = nObj.alias.join(', ');
+  save(); if (last) calc();
+});
+
+$('noteBody').addEventListener('click', e => {
+  const d = e.target.dataset;
+  if (d.noted !== undefined) { delete state.notes[d.noted]; noteOpened.delete(d.noted); }
+  else if (d.notet !== undefined) { noteOpened.has(d.notet) ? noteOpened.delete(d.notet) : noteOpened.add(d.notet); }
+  else return;
+  save(); renderNotes(); if (last) calc();
+});
+
 const refresh = () => { save(); renderMenu(); renderHistory(); if (last) calc(); };
 
 $('calc').onclick = calc;
