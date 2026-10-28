@@ -778,13 +778,17 @@ $('result').addEventListener('click', async e => {
 });
 
 // 초기 실행 및 데이터 로드
-(async () => {
-  await load();
-  $('limit').value = state.limit;
-  renderRest();
-  renderMenu();
-  renderNotes();
-  renderHistory();
+(async function() {
+  try {
+    await load();
+    $('limit').value = state.limit;
+    renderRest();
+    renderMenu();
+    renderNotes();
+    renderHistory();
+  } catch (err) {
+    console.error('초기 로드 중 에러 발생:', err);
+  }
 })();
 </script>
 </body>
