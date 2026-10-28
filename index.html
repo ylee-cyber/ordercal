@@ -262,29 +262,37 @@ function norm(v) {
   return v;
 }
 function load() {
-  try {
-    const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && s.restaurants && Object.keys(s.restaurants).length) {
-      state = s;
-      if (!state.restaurants[state.current]) state.current = Object.keys(state.restaurants)[0];
+  // GitHub에 올라간 JSON 파일의 Raw URL (본인 저장소 주소에 맞게 수정)
+  const DATA_URL = 'https://raw.githubusercontent.com/ylee-cyber/ordercal.github.io/main/order_calculator_data.json';
+  
+  async function load() {
+    try {
+      const response = await fetch(DATA_URL + '?t=' + Date.now()); // 캐시 방지용 타임스탬프 추가
+      if (response.ok) {
+        const s = await response.json();
+        if (s && s.restaurants && Object.keys(s.restaurants).length) {
+          state = s;
+          if (!state.restaurants[state.current]) state.current = Object.keys(state.restaurants)[0];
+        }
+      }
+    } catch (e) {
+      console.error('JSON 파일을 불러오지 못했습니다:', e);
+      // 실패 시 로컬 스토리지 데이터 활용 백업
+      try {
+        const local = JSON.parse(localStorage.getItem(KEY));
+        if (local) state = local;
+      } catch (err) {}
     }
-  } catch (e) {}
-  Object.values(state.restaurants).forEach(r => { r.menu = r.menu || {}; r.history = Array.isArray(r.history) ? r.history : []; for (const k in r.menu) r.menu[k] = norm(r.menu[k]); });
-  state.notes = isObj(state.notes) ? state.notes : {};
-  if (typeof state.limit !== 'number' || !(state.limit >= 0)) state.limit = 9000;
-}
-function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
-function save() { saveLocal(); if (fh) { clearTimeout(timer); timer = setTimeout(sync, 400); } }
-const menu = () => state.restaurants[state.current].menu;
-const won = n => n.toLocaleString('ko-KR') + '원';
-const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-function setMenu(name, price) {
-  name = (name || '').trim().replace(/\s+/g, ' ');
-  price = Math.round(price);
-  if (!name || !(price >= 0)) return false;
-  const e = menu()[name];
-  if (e) e.price = price; else menu()[name] = norm({ price });
-  return true;
+  
+    // 데이터 정제 및 초기화
+    Object.values(state.restaurants).forEach(r => { 
+      r.menu = r.menu || {}; 
+      r.history = Array.isArray(r.history) ? r.history : []; 
+      for (const k in r.menu) r.menu[k] = norm(r.menu[k]); 
+    });
+    state.notes = isObj(state.notes) ? state.notes : {};
+    if (typeof state.limit !== 'number' || !(state.limit >= 0)) state.limit = 9000;
+  }
 }
 
 const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ', JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅗ<b><b>ㅘ</b><b>ㅙ</b><b>ㅚ</b>ㅛㅜ</b><b><b>ㅝ</b><b>ㅞ</b><b>ㅟ</b>ㅠㅡ</b>ㅢㅣ', JONG = ' ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ';
